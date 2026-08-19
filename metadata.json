@@ -1,0 +1,6 @@
+{
+  "name": "TalentFox HR - AI Resume Parser & Recruiter Dashboard",
+  "description": "Enterprise HR recruitment platform for batch PDF resume parsing with Gemini AI, job description skill matching, duplicate detection, candidate tracking, and Excel export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
