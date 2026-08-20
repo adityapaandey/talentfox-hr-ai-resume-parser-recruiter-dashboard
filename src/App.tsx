@@ -13,7 +13,7 @@ import {
   HelpCircle,
   FileText
 } from 'lucide-react';
-import { Candidate, CandidateStatus, JobDescription, AuditLog, InterviewSchedule } from './types';
+import { Candidate, CandidateStatus, JobDescription, AuditLog, InterviewSchedule, AuthUser, UserAccount } from './types';
 import { INITIAL_CANDIDATES, PRESET_JOB_DESCRIPTIONS, isSampleCandidate } from './data/sampleCandidates';
 import { Navbar } from './components/Navbar';
 import { StatsCards } from './components/StatsCards';
@@ -23,12 +23,42 @@ import { JobDescriptionModal } from './components/JobDescriptionModal';
 import { CandidateProfileModal } from './components/CandidateProfileModal';
 import { InterviewSchedulerModal } from './components/InterviewSchedulerModal';
 import { AuditLogsDrawer } from './components/AuditLogsDrawer';
+import { UserAccessManagementModal } from './components/UserAccessManagementModal';
+import { LoginPage, DEFAULT_CREDENTIALS } from './components/LoginPage';
 import { exportCandidatesToExcel, exportCandidatesToCSV } from './utils/excelExporter';
 
 export default function App() {
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    try {
+      const stored = localStorage.getItem('talentfox_auth') || sessionStorage.getItem('talentfox_auth');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch {
+      // Fallback
+    }
+    return null;
+  });
+
   // Theme & User Role State
   const [darkMode, setDarkMode] = useState<boolean>(false);
-  const [userRole, setUserRole] = useState<'Recruiter' | 'Admin'>('Recruiter');
+  const [userRole, setUserRole] = useState<'Recruiter' | 'Admin'>(() => {
+    return currentUser?.role || 'Admin';
+  });
+
+  const handleLoginSuccess = (user: AuthUser) => {
+    setCurrentUser(user);
+    setUserRole(user.role);
+    showToast(`Welcome back, ${user.name}!`);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('talentfox_auth');
+    sessionStorage.removeItem('talentfox_auth');
+    setCurrentUser(null);
+    showToast('You have been signed out successfully.');
+  };
 
   // Candidate Pool State - filter out all sample candidates so user sees only real uploaded candidates
   const [candidates, setCandidates] = useState<Candidate[]>(() => {
@@ -66,6 +96,7 @@ export default function App() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isJdModalOpen, setIsJdModalOpen] = useState(false);
   const [isAuditLogsOpen, setIsAuditLogsOpen] = useState(false);
+  const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isSchedulerOpen, setIsSchedulerOpen] = useState(false);
@@ -275,8 +306,12 @@ export default function App() {
     showToast(`Interview scheduled for ${cand?.name || 'candidate'}!`);
   };
 
-  // Delete Candidate
+  // Delete Candidate (Admin only)
   const handleDeleteCandidate = (candidateId: string) => {
+    if (userRole !== 'Admin') {
+      showToast('Action forbidden: Recruiters are not allowed to delete candidate entries or CVs.');
+      return;
+    }
     const cand = candidates.find(c => c.id === candidateId);
     setCandidates(prev => prev.filter(c => c.id !== candidateId));
     if (cand) {
@@ -288,27 +323,45 @@ export default function App() {
     }
   };
 
-  // Bulk Delete
+  // Bulk Delete (Admin only)
   const handleBulkDelete = (candidateIds: string[]) => {
+    if (userRole !== 'Admin') {
+      showToast('Action forbidden: Recruiters are not allowed to bulk delete candidate entries.');
+      return;
+    }
     setCandidates(prev => prev.filter(c => !candidateIds.includes(c.id)));
     addAuditLog('Bulk Candidates Deleted', `Removed ${candidateIds.length} candidate records`, 'delete');
     showToast(`Deleted ${candidateIds.length} candidate records.`);
   };
 
-  // Export handlers
+  // Export handlers with strict RBAC:
+  // Recruiter: max 50 records limit with explicit notification
+  // Admin: unlimited records
   const handleExportAllExcel = () => {
+    if (userRole === 'Recruiter' && candidates.length > 50) {
+      showToast('Download limit exceeded. Recruiters can export a maximum of 50 records at a time.');
+      return;
+    }
     exportCandidatesToExcel(candidates, 'TalentFox_HR_Full_Candidate_Pool');
     addAuditLog('Excel Export', `Exported all ${candidates.length} candidates to Excel (.xlsx)`, 'export');
     showToast('Exported candidates to Excel spreadsheet (.xlsx)');
   };
 
   const handleExportAllCSV = () => {
+    if (userRole === 'Recruiter' && candidates.length > 50) {
+      showToast('Download limit exceeded. Recruiters can export a maximum of 50 records at a time.');
+      return;
+    }
     exportCandidatesToCSV(candidates, 'TalentFox_HR_Full_Candidate_Pool');
     addAuditLog('CSV Export', `Exported all ${candidates.length} candidates to CSV`, 'export');
     showToast('Exported candidates to CSV file');
   };
 
   const handleExportSelected = (selected: Candidate[]) => {
+    if (userRole === 'Recruiter' && selected.length > 50) {
+      showToast('Download limit exceeded. Recruiters can export a maximum of 50 records at a time.');
+      return;
+    }
     exportCandidatesToExcel(selected, 'TalentFox_HR_Selected_Candidates');
     addAuditLog('Excel Export', `Exported ${selected.length} selected candidates to Excel`, 'export');
     showToast(`Exported ${selected.length} selected candidates to Excel (.xlsx)`);
@@ -327,9 +380,17 @@ export default function App() {
 
   const highMatchCandidates = candidates.filter(c => c.matchResult && c.matchResult.score >= 80);
 
+  if (!currentUser) {
+    return (
+      <div className={darkMode ? 'dark' : ''}>
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
+      </div>
+    );
+  }
+
   return (
     <div className={darkMode ? 'dark' : ''}>
-      <div className="min-h-screen bg-slate-100/60 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white transition-colors duration-200">
+      <div className="min-h-screen bg-slate-100/60 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-olive-600 selection:text-white transition-colors duration-200">
         
         {/* Navigation Bar */}
         <Navbar
@@ -341,10 +402,13 @@ export default function App() {
           onOpenUpload={() => setIsUploadOpen(true)}
           onOpenJdModal={() => setIsJdModalOpen(true)}
           onOpenAuditLogs={() => setIsAuditLogsOpen(true)}
+          onOpenUserManagement={userRole === 'Admin' ? () => setIsUserManagementOpen(true) : undefined}
           onExportExcel={handleExportAllExcel}
           onExportCSV={handleExportAllCSV}
           totalCandidates={candidates.length}
           matchedCount={highMatchCandidates.length}
+          currentUser={currentUser}
+          onLogout={handleLogout}
         />
 
         {/* Main Content Area */}
@@ -354,7 +418,7 @@ export default function App() {
           <div className="p-4 sm:p-5 rounded-2xl border bg-white dark:bg-slate-900/90 border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center space-x-2">
-                <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-olive-50 text-olive-800 dark:bg-olive-950/60 dark:text-olive-300 border border-olive-200 dark:border-olive-800">
                   Target Job Requisition
                 </span>
                 <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -363,7 +427,7 @@ export default function App() {
               </div>
               
               <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center">
-                <Briefcase className="w-5 h-5 mr-2 text-indigo-600 dark:text-indigo-400" />
+                <Briefcase className="w-5 h-5 mr-2 text-olive-700 dark:text-olive-400" />
                 {activeJd?.title || 'No Job Description Active'}
               </h2>
 
@@ -384,7 +448,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setIsJdModalOpen(true)}
-                className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
               >
                 Change Role
               </button>
@@ -393,7 +457,7 @@ export default function App() {
                 type="button"
                 onClick={() => activeJd && handleRunMatchAll(activeJd)}
                 disabled={isMatchingAll || candidates.length === 0}
-                className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-500/20 disabled:opacity-50 transition-colors"
+                className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-olive-700 hover:bg-olive-800 text-white shadow-sm shadow-olive-700/20 disabled:opacity-50 transition-colors cursor-pointer"
               >
                 <Sparkles className="w-4 h-4" />
                 <span>{isMatchingAll ? 'Scoring...' : 'Auto-Match All'}</span>
@@ -413,7 +477,7 @@ export default function App() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center">
-                  <Users className="w-5 h-5 mr-2 text-indigo-600 dark:text-indigo-400" />
+                  <Users className="w-5 h-5 mr-2 text-olive-700 dark:text-olive-400" />
                   Candidate Talent Roster
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -425,7 +489,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleExportAllCSV}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 transition-colors flex items-center space-x-1"
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 transition-colors flex items-center space-x-1 cursor-pointer"
                 >
                   <FileText className="w-3.5 h-3.5" />
                   <span>Export CSV</span>
@@ -434,7 +498,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleExportAllExcel}
-                  className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center space-x-1.5"
+                  className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5" />
                   <span>Export All to Excel</span>
@@ -444,6 +508,7 @@ export default function App() {
 
             <CandidateTable
               candidates={candidates}
+              userRole={userRole}
               onViewCandidate={handleViewCandidate}
               onScheduleInterview={handleOpenScheduler}
               onUpdateStatus={handleUpdateStatus}
@@ -494,6 +559,7 @@ export default function App() {
         <CandidateProfileModal
           candidate={selectedCandidate}
           isOpen={isProfileOpen}
+          userRole={userRole}
           onClose={() => setIsProfileOpen(false)}
           activeJd={activeJd}
           onUpdateStatus={handleUpdateStatus}
@@ -508,6 +574,22 @@ export default function App() {
           isOpen={isSchedulerOpen}
           onClose={() => setIsSchedulerOpen(false)}
           onSaveSchedule={handleSaveSchedule}
+        />
+
+        {/* User / Access Management Modal (Admin Only) */}
+        <UserAccessManagementModal
+          isOpen={isUserManagementOpen}
+          onClose={() => setIsUserManagementOpen(false)}
+          currentUser={currentUser}
+          userRole={userRole}
+          onSwitchRole={(role) => {
+            setUserRole(role);
+            if (currentUser) {
+              const updated = { ...currentUser, role };
+              setCurrentUser(updated);
+              localStorage.setItem('talentfox_auth', JSON.stringify(updated));
+            }
+          }}
         />
 
         {/* Audit Logs Drawer */}

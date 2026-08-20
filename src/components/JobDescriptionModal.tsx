@@ -77,7 +77,7 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-olive-50 dark:bg-olive-950/60 text-olive-700 dark:text-olive-400 flex items-center justify-center">
               <Briefcase className="w-5 h-5" />
             </div>
             <div>
@@ -92,7 +92,7 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -109,7 +109,7 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
               <button
                 type="button"
                 onClick={() => setIsCreatingCustom(true)}
-                className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition-colors"
+                className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-olive-50 text-olive-800 dark:bg-olive-950/60 dark:text-olive-300 border border-olive-200 dark:border-olive-800 hover:bg-olive-100 transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Create Custom JD</span>
@@ -125,7 +125,7 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsCreatingCustom(false)}
-                  className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                  className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -142,7 +142,7 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
                     value={customTitle}
                     onChange={e => setCustomTitle(e.target.value)}
                     placeholder="e.g. Lead Full Stack Java Developer"
-                    className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-olive-500/20"
                   />
                 </div>
 
@@ -204,7 +204,7 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
               <div className="flex justify-end space-x-2">
                 <button
                   type="submit"
-                  className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs"
+                  className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-olive-700 hover:bg-olive-800 text-white shadow-xs cursor-pointer"
                 >
                   Save & Select JD
                 </button>
@@ -222,7 +222,7 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
                   key={jd.id}
                   className={`p-4 rounded-xl border transition-all ${
                     isSelected
-                      ? 'border-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/30 ring-1 ring-indigo-500/30'
+                      ? 'border-olive-700 bg-olive-50/40 dark:bg-olive-950/30 ring-1 ring-olive-600/30'
                       : 'border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                 >
@@ -233,7 +233,7 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
                           {jd.title}
                         </h4>
                         {isSelected && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-600 text-white">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-olive-700 text-white">
                             <Check className="w-3 h-3 mr-0.5" />
                             Active JD
                           </span>
@@ -270,7 +270,7 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
                         type="button"
                         onClick={() => handleSelectAndMatch(jd)}
                         disabled={isMatchingAll}
-                        className="w-full sm:w-auto flex items-center justify-center space-x-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs disabled:opacity-50 transition-colors"
+                        className="w-full sm:w-auto flex items-center justify-center space-x-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-olive-700 hover:bg-olive-800 text-white shadow-xs disabled:opacity-50 transition-colors cursor-pointer"
                       >
                         {isMatchingAll && isSelected ? (
                           <>
@@ -288,8 +288,8 @@ export const JobDescriptionModal: React.FC<JobDescriptionModalProps> = ({
                       <button
                         type="button"
                         onClick={() => onSelectJd(jd)}
-                        className={`text-xs px-2.5 py-1 rounded font-medium ${
-                          isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                        className={`text-xs px-2.5 py-1 rounded font-medium cursor-pointer ${
+                          isSelected ? 'text-olive-700 dark:text-olive-400 font-semibold' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                         }`}
                       >
                         {isSelected ? 'Selected' : 'Set as Active'}

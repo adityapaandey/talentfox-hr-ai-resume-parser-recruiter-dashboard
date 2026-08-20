@@ -97,34 +97,36 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
   };
 
   const handleStartParsing = async () => {
-    if (queue.length === 0) return;
+    const pendingIndices = queue
+      .map((item, idx) => ({ item, idx }))
+      .filter(({ item }) => item.status !== 'completed');
+
+    if (pendingIndices.length === 0) return;
     setIsProcessing(true);
 
-    const updatedQueue = [...queue];
-
-    for (let i = 0; i < updatedQueue.length; i++) {
-      const item = updatedQueue[i];
-      if (item.status === 'completed') continue;
-
-      // 1. Reading file
-      item.status = 'reading';
-      item.progress = 25;
-      setQueue([...updatedQueue]);
+    const parseSingleItem = async (targetId: string) => {
+      // 1. Mark as reading
+      setQueue(prev =>
+        prev.map(it => (it.id === targetId ? { ...it, status: 'reading', progress: 25 } : it))
+      );
 
       try {
-        const base64 = await fileToBase64(item.file);
-        
-        // 2. AI Parsing with Gemini
-        item.status = 'parsing_ai';
-        item.progress = 65;
-        setQueue([...updatedQueue]);
+        const currentItem = queue.find(q => q.id === targetId);
+        if (!currentItem) return;
+
+        const base64 = await fileToBase64(currentItem.file);
+
+        // 2. Mark as AI parsing
+        setQueue(prev =>
+          prev.map(it => (it.id === targetId ? { ...it, status: 'parsing_ai', progress: 65 } : it))
+        );
 
         const response = await fetch('/api/resumes/parse-base64', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             base64,
-            fileName: item.name
+            fileName: currentItem.name
           })
         });
 
@@ -134,31 +136,66 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
         }
 
         const data = await response.json();
+        const fullBase64 = base64.startsWith('data:') ? base64 : `data:application/pdf;base64,${base64}`;
         const candidate: Candidate = {
           ...data.candidate,
-          resumeFileSize: item.size
+          resumeFileName: currentItem.name,
+          resumeFileSize: currentItem.size,
+          resumeBase64: fullBase64
         };
 
         // 3. Duplicate Detection Check
         const isDuplicate = existingCandidates.some(ec => 
           (ec.email && candidate.email && ec.email.toLowerCase().trim() === candidate.email.toLowerCase().trim()) ||
           (ec.phone && candidate.phone && ec.phone.replace(/\D/g, '') === candidate.phone.replace(/\D/g, '')) ||
-          (ec.name.toLowerCase() === candidate.name.toLowerCase() && ec.currentCompany.toLowerCase() === candidate.currentCompany.toLowerCase())
+          (ec.name && candidate.name && ec.name.toLowerCase() === candidate.name.toLowerCase() && ec.currentCompany?.toLowerCase() === candidate.currentCompany?.toLowerCase())
         );
 
-        item.isDuplicate = isDuplicate;
         candidate.isDuplicate = isDuplicate;
-        item.parsedCandidate = candidate;
-        item.status = 'completed';
-        item.progress = 100;
+
+        setQueue(prev =>
+          prev.map(it =>
+            it.id === targetId
+              ? {
+                  ...it,
+                  status: 'completed',
+                  progress: 100,
+                  isDuplicate,
+                  parsedCandidate: candidate
+                }
+              : it
+          )
+        );
       } catch (err: any) {
         console.error('Error parsing item:', err);
-        item.status = 'error';
-        item.errorMessage = err.message || 'Parsing failed';
+        setQueue(prev =>
+          prev.map(it =>
+            it.id === targetId
+              ? {
+                  ...it,
+                  status: 'error',
+                  progress: 0,
+                  errorMessage: err.message || 'Parsing failed'
+                }
+              : it
+          )
+        );
       }
+    };
 
-      setQueue([...updatedQueue]);
+    // Process concurrently with up to 3 parallel requests for optimal speed without rate-limiting
+    const poolLimit = 3;
+    const pool: Promise<void>[] = [];
+    for (const { item } of pendingIndices) {
+      const p = parseSingleItem(item.id).then(() => {
+        pool.splice(pool.indexOf(p), 1);
+      });
+      pool.push(p);
+      if (pool.length >= poolLimit) {
+        await Promise.race(pool);
+      }
     }
+    await Promise.all(pool);
 
     setIsProcessing(false);
   };
@@ -386,11 +423,10 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="relative w-full max-w-3xl rounded-2xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        
-        {/* Header */}
+               {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-olive-50 dark:bg-olive-950/60 text-olive-700 dark:text-olive-400 flex items-center justify-center">
               <UploadCloud className="w-5 h-5" />
             </div>
             <div>
@@ -405,7 +441,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -421,8 +457,8 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
             onClick={() => fileInputRef.current?.click()}
             className={`cursor-pointer border-2 border-dashed rounded-xl p-8 text-center transition-all ${
               dragOver
-                ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30 scale-[0.99]'
-                : 'border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-100/60 dark:hover:bg-slate-800/80 hover:border-indigo-400'
+                ? 'border-olive-500 bg-olive-50/50 dark:bg-olive-950/30 scale-[0.99]'
+                : 'border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-100/60 dark:hover:bg-slate-800/80 hover:border-olive-400'
             }`}
           >
             <input
@@ -435,13 +471,13 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
             />
 
             <div className="flex flex-col items-center justify-center space-y-3">
-              <div className="w-14 h-14 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
+              <div className="w-14 h-14 rounded-full bg-olive-100 dark:bg-olive-900/40 text-olive-700 dark:text-olive-400 flex items-center justify-center shadow-xs">
                 <UploadCloud className="w-7 h-7" />
               </div>
               
               <div>
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  <span className="text-indigo-600 dark:text-indigo-400 hover:underline">Click to browse</span> or drag and drop PDF resumes here
+                  <span className="text-olive-700 dark:text-olive-400 hover:underline">Click to browse</span> or drag and drop PDF resumes here
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Supports Single & Batch PDF Resumes (Max 10 MB per file)
@@ -449,7 +485,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
               </div>
 
               <div className="flex items-center space-x-2 text-[11px] text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800/90 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                <Sparkles className="w-3.5 h-3.5 text-olive-600" />
                 <span>Auto-Extracts Contact, Skills, Experience, Education & Roles</span>
               </div>
             </div>
@@ -467,7 +503,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
           <div className="bg-slate-100/70 dark:bg-slate-800/60 rounded-xl p-3.5 border border-slate-200/80 dark:border-slate-700/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center">
-                <Layers className="w-4 h-4 mr-1.5 text-indigo-600 dark:text-indigo-400" />
+                <Layers className="w-4 h-4 mr-1.5 text-olive-700 dark:text-olive-400" />
                 Want to test without uploading your own PDF files?
               </p>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -479,7 +515,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleLoadDemoResumes(3)}
-                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300 dark:hover:bg-indigo-900/80 border border-indigo-200 dark:border-indigo-800 transition-colors flex items-center"
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-olive-50 hover:bg-olive-100 text-olive-800 dark:bg-olive-950/70 dark:text-olive-300 dark:hover:bg-olive-900/80 border border-olive-200 dark:border-olive-800 transition-colors flex items-center cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5 mr-1" />
                 Add 3 Sample Resumes
@@ -517,7 +553,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
                           <span>•</span>
                           {item.status === 'pending' && <span className="text-slate-500">Waiting to parse</span>}
                           {item.status === 'reading' && <span className="text-blue-500">Reading PDF data...</span>}
-                          {item.status === 'parsing_ai' && <span className="text-indigo-500 flex items-center"><Sparkles className="w-3 h-3 mr-0.5 animate-spin" /> Gemini AI extracting fields...</span>}
+                          {item.status === 'parsing_ai' && <span className="text-olive-600 flex items-center"><Sparkles className="w-3 h-3 mr-0.5 animate-spin" /> Gemini AI extracting fields...</span>}
                           {item.status === 'completed' && (
                             <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center">
                               <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
@@ -549,17 +585,17 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
                           <button
                             type="button"
                             onClick={() => handleAddSingleCandidate(item)}
-                            className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors shadow-2xs"
+                            className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors shadow-2xs cursor-pointer"
                             title="Add this candidate to the dashboard list and remove from queue"
                           >
-                            <Plus className="w-3 h-3 mr-1" />
+                            <Plus className="w-3.5 h-3.5 mr-1" />
                             Add to List
                           </button>
 
                           <button
                             type="button"
                             onClick={() => handleRemoveQueueItem(item.id)}
-                            className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                            className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
                             title="Remove from queue"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -571,7 +607,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
                           <button
                             type="button"
                             onClick={() => handleRemoveQueueItem(item.id)}
-                            className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                            className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
                             title="Dismiss error"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -581,7 +617,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
                         <div className="w-20">
                           <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
                             <div
-                              className="bg-indigo-600 h-full rounded-full transition-all duration-300"
+                              className="bg-olive-700 h-full rounded-full transition-all duration-300"
                               style={{ width: `${item.progress}%` }}
                             />
                           </div>
@@ -602,7 +638,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
             type="button"
             onClick={() => setQueue([])}
             disabled={queue.length === 0 || isProcessing}
-            className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 disabled:opacity-40"
+            className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 disabled:opacity-40 cursor-pointer"
           >
             Clear Queue
           </button>
@@ -611,7 +647,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              className="px-4 py-2 text-xs font-semibold rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -621,7 +657,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
                 type="button"
                 onClick={handleStartParsing}
                 disabled={isProcessing}
-                className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm disabled:opacity-50 transition-colors"
+                className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-olive-700 hover:bg-olive-800 text-white shadow-sm disabled:opacity-50 transition-colors cursor-pointer"
               >
                 {isProcessing ? (
                   <>
@@ -640,7 +676,7 @@ export const ResumeUploadModal: React.FC<ResumeUploadModalProps> = ({
                 type="button"
                 onClick={handleApplyToDatabase}
                 disabled={completedCount === 0}
-                className="flex items-center space-x-1.5 px-5 py-2 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-50 transition-colors"
+                className="flex items-center space-x-1.5 px-5 py-2 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-50 transition-colors cursor-pointer"
               >
                 <UserPlus className="w-4 h-4" />
                 <span>Add {completedCount} Candidate{completedCount > 1 ? 's' : ''} to Dashboard</span>

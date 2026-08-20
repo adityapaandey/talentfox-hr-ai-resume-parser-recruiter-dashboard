@@ -14,13 +14,25 @@ import {
   Sparkles, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   Trash2, 
   MoreVertical,
   AlertTriangle,
   FileSpreadsheet,
   CheckCircle2,
   XCircle,
-  UploadCloud
+  UploadCloud,
+  Mail,
+  Phone,
+  MapPin,
+  Linkedin,
+  Github,
+  Briefcase,
+  GraduationCap,
+  Award,
+  Layers,
+  Clock
 } from 'lucide-react';
 import { Candidate, CandidateStatus } from '../types';
 import { downloadSampleResume } from '../utils/pdfHelpers';
@@ -36,6 +48,7 @@ interface CandidateTableProps {
   selectedStatusFilter: string;
   onFilterStatus: (status: string) => void;
   onOpenUpload?: () => void;
+  userRole?: 'Recruiter' | 'Admin';
 }
 
 type SortField = 'name' | 'totalExperienceYears' | 'score' | 'uploadDate' | 'currentCompany';
@@ -51,7 +64,8 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
   onExportSelectedExcel,
   selectedStatusFilter,
   onFilterStatus,
-  onOpenUpload
+  onOpenUpload,
+  userRole = 'Admin'
 }) => {
   // Search & Filters state
   const [searchTerm, setSearchTerm] = useState('');
@@ -66,6 +80,7 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
 
   // Selection state
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -241,7 +256,7 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
               value={searchTerm}
               onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
               placeholder="Search candidates, skills, or companies..."
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+              className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-olive-500/20 focus:border-olive-500 transition-all"
             />
             {searchTerm && (
               <button
@@ -315,15 +330,30 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
               <span>Duplicates</span>
             </button>
 
+            {/* Expand / Collapse All Details */}
+            <button
+              onClick={() => {
+                if (expandedIds.length === paginatedCandidates.length) {
+                  setExpandedIds([]);
+                } else {
+                  setExpandedIds(paginatedCandidates.map(c => c.id));
+                }
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 transition-colors flex items-center space-x-1 shadow-2xs cursor-pointer"
+            >
+              <Layers className="w-3.5 h-3.5 text-olive-600 dark:text-olive-400" />
+              <span>{expandedIds.length > 0 ? 'Collapse Details' : 'Expand All Details'}</span>
+            </button>
+
           </div>
 
         </div>
 
         {/* Bulk Actions Banner if items are selected */}
         {selectedIds.length > 0 && (
-          <div className="p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-between text-xs animate-fadeIn">
+          <div className="p-2.5 rounded-lg bg-olive-50 dark:bg-olive-950/60 border border-olive-200 dark:border-olive-800 flex items-center justify-between text-xs animate-fadeIn">
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-indigo-900 dark:text-indigo-200">
+              <span className="font-bold text-olive-900 dark:text-olive-200">
                 {selectedIds.length} candidate{selectedIds.length > 1 ? 's' : ''} selected
               </span>
             </div>
@@ -332,25 +362,28 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
               <button
                 type="button"
                 onClick={() => onExportSelectedExcel(selectedCandidatesList)}
-                className="flex items-center space-x-1 px-3 py-1 font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs"
+                className="flex items-center space-x-1 px-3 py-1 font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs cursor-pointer"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
                 <span>Export Selected</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setShowBulkDeleteConfirm(true)}
-                className="flex items-center space-x-1 px-3 py-1 font-semibold rounded-md bg-rose-600 hover:bg-rose-700 text-white shadow-2xs transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete Selected ({selectedIds.length})</span>
-              </button>
+              {/* Bulk delete: ONLY allowed for Admin */}
+              {userRole === 'Admin' && (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  className="flex items-center space-x-1 px-3 py-1 font-semibold rounded-md bg-rose-600 hover:bg-rose-700 text-white shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Selected ({selectedIds.length})</span>
+                </button>
+              )}
 
               <button
                 type="button"
                 onClick={() => setSelectedIds([])}
-                className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-2"
+                className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-2 cursor-pointer"
               >
                 Deselect
               </button>
@@ -373,10 +406,10 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
                 <button
                   type="button"
                   onClick={toggleSelectAll}
-                  className="text-slate-400 hover:text-indigo-600 transition-colors"
+                  className="text-slate-400 hover:text-olive-600 transition-colors"
                 >
                   {isAllSelected ? (
-                    <CheckSquare className="w-4 h-4 text-indigo-600" />
+                    <CheckSquare className="w-4 h-4 text-olive-600" />
                   ) : (
                     <Square className="w-4 h-4" />
                   )}
@@ -386,7 +419,7 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
               {/* Name Column */}
               <th 
                 onClick={() => handleSort('name')}
-                className="px-6 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 cursor-pointer hover:text-indigo-600 transition-colors"
+                className="px-6 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 cursor-pointer hover:text-olive-600 transition-colors"
               >
                 <div className="flex items-center space-x-1">
                   <span>Candidate</span>
@@ -399,7 +432,7 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
               {/* Experience Column */}
               <th 
                 onClick={() => handleSort('totalExperienceYears')}
-                className="px-6 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 cursor-pointer hover:text-indigo-600 transition-colors"
+                className="px-6 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 cursor-pointer hover:text-olive-600 transition-colors"
               >
                 <div className="flex items-center space-x-1">
                   <span>Experience</span>
@@ -412,7 +445,7 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
               {/* Current Company & Designation */}
               <th 
                 onClick={() => handleSort('currentCompany')}
-                className="px-6 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 cursor-pointer hover:text-indigo-600 transition-colors"
+                className="px-6 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 cursor-pointer hover:text-olive-600 transition-colors"
               >
                 <div className="flex items-center space-x-1">
                   <span>Current Company</span>
@@ -430,7 +463,7 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
               {/* Match % Column */}
               <th 
                 onClick={() => handleSort('score')}
-                className="px-6 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 cursor-pointer hover:text-indigo-600 transition-colors"
+                className="px-6 py-3 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 cursor-pointer hover:text-olive-600 transition-colors"
               >
                 <div className="flex items-center space-x-1">
                   <span>Match %</span>
@@ -457,148 +490,357 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {paginatedCandidates.map((c, idx) => {
               const isSelected = selectedIds.includes(c.id);
+              const isExpanded = expandedIds.includes(c.id);
 
               return (
-                <tr
-                  key={c.id || `candidate-row-${idx}`}
-                  className={`hover:bg-indigo-50/30 dark:hover:bg-slate-800/40 transition-colors ${
-                    isSelected ? 'bg-indigo-50/50 dark:bg-indigo-950/30' : ''
-                  }`}
-                >
-                  
-                  {/* Select Checkbox */}
-                  <td className="px-4 py-4 text-center">
-                    <button
-                      type="button"
-                      onClick={() => toggleSelectOne(c.id)}
-                      className="text-slate-400 hover:text-indigo-600"
-                    >
-                      {isSelected ? (
-                        <CheckSquare className="w-4 h-4 text-indigo-600" />
-                      ) : (
-                        <Square className="w-4 h-4" />
-                      )}
-                    </button>
-                  </td>
-
-                  {/* Candidate Name & Contact Details */}
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <div className="flex items-center space-x-1.5">
+                <React.Fragment key={c.id || `candidate-row-${idx}`}>
+                  <tr
+                    className={`hover:bg-olive-50/30 dark:hover:bg-slate-800/40 transition-colors ${
+                      isSelected ? 'bg-olive-50/50 dark:bg-olive-950/30' : ''
+                    } ${isExpanded ? 'border-b-0 bg-slate-50/60 dark:bg-slate-800/30' : ''}`}
+                  >
+                    
+                    {/* Select Checkbox & Expand Toggle */}
+                    <td className="px-4 py-4 text-center">
+                      <div className="flex items-center justify-center space-x-1.5">
                         <button
                           type="button"
-                          onClick={() => onViewCandidate(c)}
-                          className="text-sm font-bold text-slate-800 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 text-left truncate"
+                          onClick={() => {
+                            setExpandedIds(prev =>
+                              prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                            );
+                          }}
+                          className="p-1 text-slate-400 hover:text-olive-600 rounded transition-colors"
+                          title={isExpanded ? 'Collapse row details' : 'Expand all candidate details'}
                         >
-                          {c.name}
+                          {isExpanded ? (
+                            <ChevronUp className="w-4 h-4 text-olive-600" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4" />
+                          )}
                         </button>
-                        {c.isDuplicate && (
-                          <span 
-                            className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                            title="Possible duplicate candidate profile"
+
+                        <button
+                          type="button"
+                          onClick={() => toggleSelectOne(c.id)}
+                          className="text-slate-400 hover:text-olive-600"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-olive-600" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </td>
+
+                    {/* Candidate Name & Contact Details */}
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <div className="flex items-center space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onViewCandidate(c)}
+                            className="text-sm font-bold text-slate-800 dark:text-white hover:text-olive-600 dark:hover:text-olive-400 text-left truncate cursor-pointer"
                           >
-                            Duplicate
+                            {c.name}
+                          </button>
+                          {c.isDuplicate && (
+                            <span 
+                              className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                              title="Possible duplicate candidate profile"
+                            >
+                              Duplicate
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400 truncate">
+                          <span>{c.email}</span>
+                          {c.phone && (
+                            <>
+                              <span>•</span>
+                              <span>{c.phone}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Experience */}
+                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">
+                      <div className="font-semibold">{c.totalExperienceYears} Years</div>
+                      {c.location && (
+                        <div className="text-[11px] text-slate-400 flex items-center gap-0.5 truncate max-w-[140px]">
+                          <MapPin className="w-3 h-3 shrink-0" />
+                          <span>{c.location}</span>
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Current Company & Designation */}
+                    <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-medium">
+                      <div className="truncate max-w-[170px]">
+                        {c.currentCompany || 'Independent'}
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate max-w-[170px]">
+                        {c.currentDesignation || 'Engineer'}
+                      </div>
+                    </td>
+
+                    {/* Primary Skills */}
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1 max-w-[240px]">
+                        {(c.skills || []).slice(0, 3).map((skill, sIdx) => (
+                          <span
+                            key={`${c.id}-skill-${skill}-${sIdx}`}
+                            className="px-1.5 py-0.5 bg-olive-100 dark:bg-olive-950 text-olive-800 dark:text-olive-300 text-[10px] font-bold rounded"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                        {(c.skills || []).length > 3 && (
+                          <span 
+                            className="px-1 py-0.5 rounded text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 font-medium"
+                            title={(c.skills || []).slice(3).join(', ')}
+                          >
+                            +{(c.skills || []).length - 3}
                           </span>
                         )}
                       </div>
-                      
-                      <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {c.email}
-                      </span>
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* Experience */}
-                  <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">
-                    {c.totalExperienceYears} Years
-                  </td>
+                    {/* Match % */}
+                    <td className="px-6 py-4">
+                      {renderMatchBadge(c)}
+                    </td>
 
-                  {/* Current Company & Designation */}
-                  <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-medium">
-                    <div className="truncate max-w-[170px]">
-                      {c.currentCompany || 'Independent'}
-                    </div>
-                    <div className="text-[11px] text-slate-400 truncate max-w-[170px]">
-                      {c.currentDesignation || 'Engineer'}
-                    </div>
-                  </td>
+                    {/* Pipeline Status Select */}
+                    <td className="px-6 py-4">
+                      <select
+                        value={c.status}
+                        onChange={e => onUpdateStatus(c.id, e.target.value as CandidateStatus)}
+                        className="text-xs font-semibold px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-hidden"
+                      >
+                        <option value="New">New</option>
+                        <option value="Screened">Screened</option>
+                        <option value="Interview Scheduled">Interview Scheduled</option>
+                        <option value="Shortlisted">Shortlisted</option>
+                        <option value="Offered">Offered</option>
+                        <option value="Hired">Hired</option>
+                        <option value="Rejected">Rejected</option>
+                      </select>
+                    </td>
 
-                  {/* Primary Skills */}
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-1 max-w-[240px]">
-                      {(c.skills || []).slice(0, 3).map((skill, sIdx) => (
-                        <span
-                          key={`${c.id}-skill-${skill}-${sIdx}`}
-                          className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold rounded"
+                    {/* Action */}
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end space-x-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onViewCandidate(c)}
+                          className="text-olive-700 dark:text-olive-400 text-xs font-bold hover:underline px-1.5 py-1 cursor-pointer"
                         >
-                          {skill}
-                        </span>
-                      ))}
-                      {(c.skills || []).length > 3 && (
-                        <span 
-                          className="px-1 py-0.5 rounded text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 font-medium"
-                          title={(c.skills || []).slice(3).join(', ')}
+                          View Profile
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => downloadSampleResume(c)}
+                          title="Download original resume"
+                          className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
                         >
-                          +{(c.skills || []).length - 3}
-                        </span>
-                      )}
-                    </div>
-                  </td>
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
 
-                  {/* Match % */}
-                  <td className="px-6 py-4">
-                    {renderMatchBadge(c)}
-                  </td>
+                        {/* Delete: ONLY allowed for Admin */}
+                        {userRole === 'Admin' && (
+                          <button
+                            type="button"
+                            onClick={() => setDeletingCandidate(c)}
+                            title={`Delete ${c.name}`}
+                            className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
 
-                  {/* Pipeline Status Select */}
-                  <td className="px-6 py-4">
-                    <select
-                      value={c.status}
-                      onChange={e => onUpdateStatus(c.id, e.target.value as CandidateStatus)}
-                      className="text-xs font-semibold px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-hidden"
-                    >
-                      <option value="New">New</option>
-                      <option value="Screened">Screened</option>
-                      <option value="Interview Scheduled">Interview Scheduled</option>
-                      <option value="Shortlisted">Shortlisted</option>
-                      <option value="Offered">Offered</option>
-                      <option value="Hired">Hired</option>
-                      <option value="Rejected">Rejected</option>
-                    </select>
-                  </td>
+                  </tr>
 
-                  {/* Action */}
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end space-x-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onViewCandidate(c)}
-                        className="text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:underline px-1.5 py-1"
-                      >
-                        View Profile
-                      </button>
+                  {/* Expandable Comprehensive Details Drawer */}
+                  {isExpanded && (
+                    <tr className="bg-slate-50/80 dark:bg-slate-850/60 border-b border-slate-200 dark:border-slate-800">
+                      <td colSpan={8} className="p-4 sm:p-5">
+                        <div className="space-y-4 rounded-xl border border-olive-200/80 dark:border-olive-900/60 bg-white dark:bg-slate-900 p-4 shadow-xs">
+                          
+                          {/* Top Row: Meta Badges & IDs */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800 text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[11px] text-slate-600 dark:text-slate-300">
+                                ID: {c.id}
+                              </span>
+                              <span className="text-slate-400">•</span>
+                              <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                Applied: {c.uploadDate || 'Recent'}
+                              </span>
+                              {c.resumeFileName && (
+                                <>
+                                  <span className="text-slate-400">•</span>
+                                  <span className="text-slate-600 dark:text-slate-400 font-mono text-[11px]">
+                                    File: {c.resumeFileName} {c.resumeFileSize ? `(${Math.round(c.resumeFileSize / 1024)} KB)` : ''}
+                                  </span>
+                                </>
+                              )}
+                            </div>
 
-                      <button
-                        type="button"
-                        onClick={() => downloadSampleResume(c)}
-                        title="Download resume"
-                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
+                            <div className="flex items-center gap-2">
+                              {c.linkedin && (
+                                <a
+                                  href={c.linkedin.startsWith('http') ? c.linkedin : `https://${c.linkedin}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 text-xs font-semibold transition-colors"
+                                >
+                                  <Linkedin className="w-3.5 h-3.5" />
+                                  <span>LinkedIn</span>
+                                </a>
+                              )}
+                              {c.github && (
+                                <a
+                                  href={c.github.startsWith('http') ? c.github : `https://${c.github}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 text-xs font-semibold transition-colors"
+                                >
+                                  <Github className="w-3.5 h-3.5" />
+                                  <span>GitHub</span>
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => downloadSampleResume(c)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-olive-50 dark:bg-olive-950/60 text-olive-700 dark:text-olive-300 hover:bg-olive-100 text-xs font-semibold transition-colors cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download PDF</span>
+                              </button>
+                            </div>
+                          </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setDeletingCandidate(c)}
-                        title={`Delete ${c.name}`}
-                        className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
+                          {/* Grid 1: Summary & Experience Info */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="md:col-span-2 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                              <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                                <Briefcase className="w-3.5 h-3.5 text-olive-600 dark:text-olive-400" />
+                                <span>Professional Summary</span>
+                              </h5>
+                              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                {c.summary || 'No summary extracted.'}
+                              </p>
+                            </div>
 
-                </tr>
+                            <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-2">
+                              <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                                <span>AI Match & Fit</span>
+                              </h5>
+                              <div className="text-xs space-y-1">
+                                <div><span className="text-slate-400">Match Score:</span> <span className="font-bold text-olive-700 dark:text-olive-400">{c.matchResult?.score ?? 'N/A'}%</span></div>
+                                <div><span className="text-slate-400">Recommendation:</span> <span className="font-semibold text-slate-800 dark:text-slate-200">{c.matchResult?.recommendation || 'Evaluated'}</span></div>
+                                <div><span className="text-slate-400">Experience Fit:</span> <span className="font-semibold text-slate-800 dark:text-slate-200">{c.matchResult?.experienceFit || 'Verified'}</span></div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Grid 2: Categorized Skills & Education & Employment */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            {/* Skills Breakdown */}
+                            <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-2">
+                              <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                <Layers className="w-3.5 h-3.5 text-olive-600 dark:text-olive-400" />
+                                <span>Categorized Skills</span>
+                              </h5>
+                              {c.normalizedSkills?.technical && c.normalizedSkills.technical.length > 0 && (
+                                <div>
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Technical:</span>
+                                  <div className="flex flex-wrap gap-1 mt-0.5">
+                                    {c.normalizedSkills.technical.map((s, idx) => (
+                                      <span key={idx} className="px-1.5 py-0.5 rounded bg-olive-100 dark:bg-olive-950 text-olive-800 dark:text-olive-300 text-[10px] font-semibold">{s}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {c.normalizedSkills?.functional && c.normalizedSkills.functional.length > 0 && (
+                                <div>
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Functional:</span>
+                                  <div className="flex flex-wrap gap-1 mt-0.5">
+                                    {c.normalizedSkills.functional.map((s, idx) => (
+                                      <span key={idx} className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-[10px] font-semibold">{s}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {c.normalizedSkills?.tools && c.normalizedSkills.tools.length > 0 && (
+                                <div>
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Tools & Platforms:</span>
+                                  <div className="flex flex-wrap gap-1 mt-0.5">
+                                    {c.normalizedSkills.tools.map((s, idx) => (
+                                      <span key={idx} className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-750 text-slate-700 dark:text-slate-300 text-[10px] font-semibold">{s}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Education Details */}
+                            <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-1.5">
+                              <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                <GraduationCap className="w-3.5 h-3.5 text-olive-600 dark:text-olive-400" />
+                                <span>Education Details</span>
+                              </h5>
+                              {(c.education || []).length > 0 ? (
+                                c.education.map((edu, eIdx) => (
+                                  <div key={eIdx} className="text-xs pb-1 border-b border-slate-200/60 dark:border-slate-700/60 last:border-0">
+                                    <div className="font-semibold text-slate-800 dark:text-slate-200">{edu.degree} in {edu.specialization || 'Engineering'}</div>
+                                    <div className="text-[11px] text-slate-500">{edu.institution} {edu.graduationYear ? `(${edu.graduationYear})` : ''}</div>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-xs text-slate-400 italic">No formal education listed.</p>
+                              )}
+                            </div>
+
+                            {/* Employment & Previous Companies */}
+                            <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-1.5">
+                              <h5 className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                <Briefcase className="w-3.5 h-3.5 text-olive-600 dark:text-olive-400" />
+                                <span>Employment History</span>
+                              </h5>
+                              {(c.employmentHistory || []).length > 0 ? (
+                                c.employmentHistory.slice(0, 2).map((emp, empIdx) => (
+                                  <div key={empIdx} className="text-xs pb-1 border-b border-slate-200/60 dark:border-slate-700/60 last:border-0">
+                                    <div className="font-semibold text-slate-800 dark:text-slate-200">{emp.designation}</div>
+                                    <div className="text-[11px] text-slate-500">{emp.company} [{emp.duration}]</div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-xs text-slate-600 dark:text-slate-300">
+                                  <div>Current: <span className="font-semibold">{c.currentCompany || 'N/A'}</span> ({c.currentDesignation || 'N/A'})</div>
+                                  {c.previousCompanies && c.previousCompanies.length > 0 && (
+                                    <div className="mt-1 text-[11px] text-slate-500">Previous: {c.previousCompanies.join(', ')}</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               );
             })}
 
@@ -607,7 +849,7 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
                 <td colSpan={8} className="p-12 text-center">
                   <div className="max-w-sm mx-auto space-y-3">
                     <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
-                      {candidates.length === 0 ? <FileText className="w-6 h-6 text-indigo-500" /> : <Search className="w-6 h-6" />}
+                      {candidates.length === 0 ? <FileText className="w-6 h-6 text-olive-600" /> : <Search className="w-6 h-6" />}
                     </div>
                     <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
                       {candidates.length === 0 ? 'No Resumes Uploaded Yet' : 'No candidates found'}
@@ -622,7 +864,7 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
                         <button
                           type="button"
                           onClick={onOpenUpload}
-                          className="mt-2 inline-flex items-center px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors"
+                          className="mt-2 inline-flex items-center px-4 py-2 text-xs font-semibold rounded-lg bg-olive-600 hover:bg-olive-700 text-white shadow-xs transition-colors cursor-pointer"
                         >
                           <UploadCloud className="w-4 h-4 mr-1.5" />
                           Upload PDF Resumes
@@ -639,7 +881,7 @@ export const CandidateTable: React.FC<CandidateTableProps> = ({
                           setOnlyDuplicates(false);
                           onFilterStatus('All');
                         }}
-                        className="mt-2 px-3 py-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                        className="mt-2 px-3 py-1.5 text-xs font-semibold text-olive-700 dark:text-olive-400 hover:underline cursor-pointer"
                       >
                         Reset All Filters
                       </button>

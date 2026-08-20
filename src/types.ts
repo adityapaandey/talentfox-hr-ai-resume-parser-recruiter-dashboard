@@ -1,3 +1,12 @@
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: 'Recruiter' | 'Admin';
+  avatarInitials: string;
+  title: string;
+}
+
 export interface Education {
   degree: string;
   specialization: string;
@@ -106,5 +115,17 @@ export interface AuditLog {
   action: string;
   details: string;
   user: string;
-  type: 'upload' | 'parse' | 'match' | 'status_change' | 'export' | 'delete' | 'interview';
+  type: 'upload' | 'parse' | 'match' | 'status_change' | 'export' | 'delete' | 'interview' | 'edit';
+}
+
+export interface UserAccount {
+  id: string;
+  name: string;
+  email: string;
+  role: 'Recruiter' | 'Admin';
+  title: string;
+  avatarInitials: string;
+  status: 'Active' | 'Invited' | 'Suspended';
+  createdAt: string;
+  lastActive: string;
 }

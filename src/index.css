@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+@theme {
+  --color-olive-50: #f6f8f1;
+  --color-olive-100: #ecf1e1;
+  --color-olive-200: #dce4c7;
+  --color-olive-300: #c4d3a4;
+  --color-olive-400: #a7bc7e;
+  --color-olive-500: #86a157;
+  --color-olive-600: #556b2f;
+  --color-olive-700: #445626;
+  --color-olive-800: #384620;
+  --color-olive-900: #2d381b;
+  --color-olive-950: #171d0e;
+}
+
 body {
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }

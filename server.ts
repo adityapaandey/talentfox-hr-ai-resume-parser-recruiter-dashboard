@@ -57,6 +57,14 @@ let auditLogs: Array<{
   }
 ];
 
+// In-Memory storage for original uploaded PDF files to support instant full-file downloads
+const resumeFileStore = new Map<string, {
+  buffer: Buffer;
+  fileName: string;
+  mimeType: string;
+  base64: string;
+}>();
+
 function logActivity(action: string, details: string, type: string, user = 'HR Recruiter') {
   auditLogs.unshift({
     id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -69,12 +77,16 @@ function logActivity(action: string, details: string, type: string, user = 'HR R
   if (auditLogs.length > 100) auditLogs.pop();
 }
 
-// Candidate Gemini models to try in order of preference / availability
-// Prioritize high-availability, low-latency flash models first
+// Supported active Gemini models in order of quota & priority:
+// 1. gemini-2.5-flash (fast, standard)
+// 2. gemini-3.1-flash-lite (high rate-limit throughput)
+// 3. gemini-3.7-flash (reasoning flash)
+// 4. gemini-3.1-pro-preview (advanced pro preview)
 const GEMINI_MODELS = [
-  'gemini-flash-latest',
+  'gemini-2.5-flash',
   'gemini-3.1-flash-lite',
-  'gemini-3.7-flash'
+  'gemini-3.7-flash',
+  'gemini-3.1-pro-preview'
 ];
 
 // Helper to delay execution for retry backoff
@@ -82,8 +94,6 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Robust Gemini generation wrapper with multi-model fallback and graceful non-blocking degradation
 async function generateWithGeminiFallback(ai: GoogleGenAI, contents: any, schemaConfig?: any): Promise<any> {
-  let lastError: any = null;
-
   for (const modelName of GEMINI_MODELS) {
     try {
       const config: any = {};
@@ -92,7 +102,7 @@ async function generateWithGeminiFallback(ai: GoogleGenAI, contents: any, schema
         config.responseSchema = schemaConfig;
       }
 
-      // Format contents appropriately
+      // Format contents appropriately for @google/genai SDK
       let formattedContents: any;
       if (typeof contents === 'string') {
         formattedContents = contents;
@@ -100,17 +110,24 @@ async function generateWithGeminiFallback(ai: GoogleGenAI, contents: any, schema
         if (contents.length === 1 && contents[0].text && !contents[0].inlineData) {
           formattedContents = contents[0].text;
         } else {
-          formattedContents = { parts: contents };
+          formattedContents = contents;
         }
       } else {
         formattedContents = contents;
       }
 
-      const response = await ai.models.generateContent({
+      // Generous promise timeout (25 seconds max per model attempt)
+      const generatePromise = ai.models.generateContent({
         model: modelName,
         contents: formattedContents,
         config
       });
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('AI generation timeout')), 25000)
+      );
+
+      const response: any = await Promise.race([generatePromise, timeoutPromise]);
 
       if (response && response.text) {
         let text = response.text.trim();
@@ -118,11 +135,15 @@ async function generateWithGeminiFallback(ai: GoogleGenAI, contents: any, schema
         if (text.startsWith('```')) {
           text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
         }
-        return JSON.parse(text);
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
       }
-    } catch {
+    } catch (err: any) {
+      console.warn(`Gemini generation note for ${modelName}:`, err?.message || err);
       // Gracefully advance to next candidate model or deterministic fallback
-      await delay(80);
+      await delay(100);
     }
   }
 
@@ -193,30 +214,38 @@ async function extractTextFromPdf(buffer: Buffer): Promise<string> {
 function createSmartDeterministicParsedResume(fileName: string, rawText = '') {
   const cleanBaseName = fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').replace(/\(\d+\)/g, '').trim();
 
-  // Extract Email
+  // Extract Email - exact regex
   const emailMatch = rawText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-  const email = emailMatch ? emailMatch[0] : `${cleanBaseName.toLowerCase().replace(/\s+/g, '.')}@candidate.talentfox.io`;
+  const email = emailMatch ? emailMatch[0] : '';
 
-  // Extract Phone Number
-  const phoneMatch = rawText.match(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
-  const phone = phoneMatch ? phoneMatch[0] : '+1 (555) 234-5678';
+  // Extract Phone Number - international and domestic formats
+  const phoneMatch = rawText.match(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/) ||
+                     rawText.match(/\b\d{10}\b/);
+  const phone = phoneMatch ? phoneMatch[0] : '';
 
   // Extract LinkedIn
-  const linkedinMatch = rawText.match(/https?:\/\/(?:www\.)?linkedin\.com\/in\/[a-zA-Z0-9_-]+/i);
-  const linkedin = linkedinMatch ? linkedinMatch[0] : `https://linkedin.com/in/${cleanBaseName.toLowerCase().replace(/\s+/g, '-')}`;
+  const linkedinMatch = rawText.match(/https?:\/\/(?:www\.)?linkedin\.com\/in\/[a-zA-Z0-9_-]+/i) ||
+                        rawText.match(/linkedin\.com\/in\/[a-zA-Z0-9_-]+/i);
+  const linkedin = linkedinMatch ? (linkedinMatch[0].startsWith('http') ? linkedinMatch[0] : `https://${linkedinMatch[0]}`) : '';
 
   // Extract GitHub
-  const githubMatch = rawText.match(/https?:\/\/(?:www\.)?github\.com\/[a-zA-Z0-9_-]+/i);
-  const github = githubMatch ? githubMatch[0] : `https://github.com/${cleanBaseName.toLowerCase().replace(/\s+/g, '')}`;
+  const githubMatch = rawText.match(/https?:\/\/(?:www\.)?github\.com\/[a-zA-Z0-9_-]+/i) ||
+                      rawText.match(/github\.com\/[a-zA-Z0-9_-]+/i);
+  const github = githubMatch ? (githubMatch[0].startsWith('http') ? githubMatch[0] : `https://${githubMatch[0]}`) : '';
 
-  // Extract Name from first lines or filename
-  let candidateName = cleanBaseName;
+  // Extract Name from top lines or clean base filename
+  let candidateName = '';
   if (rawText) {
-    const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 2 && l.length < 45);
-    for (const line of lines.slice(0, 5)) {
-      if (!line.includes('@') && !line.includes('http') && !line.match(/\d{4}/) && !line.toLowerCase().includes('resume') && !line.toLowerCase().includes('curriculum')) {
-        // If line looks like a proper name
-        if (line.split(/\s+/).length <= 4) {
+    const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 2 && l.length < 50);
+    for (const line of lines.slice(0, 10)) {
+      const lower = line.toLowerCase();
+      if (!line.includes('@') && !line.includes('http') && !line.match(/\d{4}/) && 
+          !lower.includes('resume') && !lower.includes('curriculum') && !lower.includes('page') &&
+          !lower.includes('phone') && !lower.includes('email') && !lower.includes('profile') &&
+          !lower.includes('engineer') && !lower.includes('developer') && !lower.includes('manager') &&
+          !lower.includes('contact') && !lower.includes('skills')) {
+        const words = line.split(/\s+/);
+        if (words.length >= 2 && words.length <= 4 && !line.includes(':') && !line.includes('|')) {
           candidateName = line;
           break;
         }
@@ -224,117 +253,163 @@ function createSmartDeterministicParsedResume(fileName: string, rawText = '') {
     }
   }
 
-  // Capitalize candidate name nicely
+  if (!candidateName) {
+    candidateName = cleanBaseName;
+  }
+
+  // Capitalize candidate name cleanly
   candidateName = candidateName.split(' ')
     .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ') || 'Candidate Profile';
+    .join(' ') || 'Candidate';
 
-  // Extract Experience Years
-  let expYears = 5;
-  const expMatch = rawText.match(/(\d{1,2})\+?\s*(?:years|yrs|year)/i);
+  // Extract Experience Years based on explicit mentions or date spans
+  let expYears = 0;
+  const expMatch = rawText.match(/(\d{1,2})\+?\s*(?:years|yrs|year)\s*(?:of)?\s*(?:experience|exp)/i) ||
+                   rawText.match(/(\d{1,2})\+?\s*(?:years|yrs|year)/i);
   if (expMatch) {
-    expYears = Math.min(30, Math.max(1, parseInt(expMatch[1], 10)));
+    expYears = Math.min(35, Math.max(0, parseInt(expMatch[1], 10)));
   } else {
-    // Check filename for year hints (e.g. 8years)
-    const fnExpMatch = fileName.match(/(\d{1,2})\s*(?:years|yrs|yr)/i);
-    if (fnExpMatch) {
-      expYears = parseInt(fnExpMatch[1], 10);
+    // Check for year spans like 2018 - 2024
+    const yearMatches = [...rawText.matchAll(/\b(19\d\d|20\d\d)\b/g)].map(m => parseInt(m[1], 10));
+    if (yearMatches.length >= 2) {
+      const validYears = yearMatches.filter(y => y >= 1995 && y <= new Date().getFullYear());
+      if (validYears.length >= 2) {
+        const minYear = Math.min(...validYears);
+        const maxYear = Math.max(...validYears);
+        const span = maxYear - minYear;
+        if (span >= 1 && span <= 35) {
+          expYears = span;
+        }
+      }
     }
   }
 
-  // Extract Technical Skills
-  const commonSkills = [
+  // Extract Technical Skills that actually appear in the text
+  const technicalLibrary = [
     'Java', 'Spring Boot', 'Microservices', 'AWS', 'React', 'Angular', 'Vue', 'Node.js',
-    'Python', 'FastAPI', 'Django', 'PyTorch', 'TensorFlow', 'AI/ML', 'Docker', 'Kubernetes',
-    'Terraform', 'CI/CD', 'SQL', 'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Kafka',
+    'Python', 'FastAPI', 'Django', 'Flask', 'PyTorch', 'TensorFlow', 'AI/ML', 'Docker', 'Kubernetes',
+    'Terraform', 'CI/CD', 'SQL', 'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Kafka', 'RabbitMQ',
     'TypeScript', 'JavaScript', 'Tailwind CSS', 'Next.js', 'GraphQL', 'REST APIs',
-    'DevOps', 'Linux', 'Git', 'Agile', 'Jira', 'C#', '.NET', 'Golang', 'GCP', 'Azure'
+    'DevOps', 'Linux', 'Git', 'Agile', 'Jira', 'C#', '.NET', 'Golang', 'GCP', 'Azure',
+    'HTML', 'CSS', 'C++', 'C', 'PHP', 'Ruby', 'Swift', 'Kotlin', 'R', 'Scala',
+    'Snowflake', 'Spark', 'Hadoop', 'Tableau', 'Power BI', 'Figma', 'Elasticsearch', 'Solr'
   ];
 
-  const foundSkills = commonSkills.filter(skill => {
+  const foundSkills = technicalLibrary.filter(skill => {
     const regex = new RegExp(`\\b${skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-    return regex.test(rawText) || regex.test(fileName);
+    return regex.test(rawText);
   });
 
-  const skillsList = foundSkills.length > 0 ? foundSkills : ['Java', 'Spring Boot', 'React', 'SQL', 'AWS', 'REST APIs'];
+  const skillsList = foundSkills.length > 0 ? foundSkills : ['Software Engineering', 'Problem Solving'];
 
-  // Current Designation & Company
-  let designation = 'Senior Software Engineer';
-  if (skillsList.includes('AI/ML') || skillsList.includes('Python') || skillsList.includes('PyTorch')) {
-    designation = 'AI / ML Engineer';
-  } else if (skillsList.includes('DevOps') || skillsList.includes('Kubernetes') || skillsList.includes('Terraform')) {
-    designation = 'DevOps & Cloud Engineer';
-  } else if (skillsList.includes('React') || skillsList.includes('Vue') || skillsList.includes('Next.js')) {
-    designation = 'Full Stack React Engineer';
-  } else if (skillsList.includes('Java') || skillsList.includes('Spring Boot')) {
-    designation = 'Senior Java Full Stack Engineer';
+  // Extract Location if present
+  let location = '';
+  const locMatch = rawText.match(/([A-Z][a-zA-Z\s]+,\s*(?:[A-Z]{2}|[A-Za-z]+))/);
+  if (locMatch && !locMatch[0].includes('Resume') && !locMatch[0].includes('Curriculum') && !locMatch[0].includes('Experience')) {
+    location = locMatch[0].trim();
   }
 
-  const currentCompany = 'Enterprise Technology Solutions';
-  const previousCompanies = ['Global Tech Innovations', 'Infosys Digital'];
+  // Extract Summary if present
+  let summary = '';
+  if (rawText.length > 50) {
+    const summaryHeader = rawText.match(/(?:summary|objective|profile|about me|professional summary)[\s:]+([^\n]+(?:\n[^\n]+){1,4})/i);
+    if (summaryHeader && summaryHeader[1]) {
+      summary = summaryHeader[1].replace(/\s+/g, ' ').trim();
+    } else {
+      const firstParagraph = rawText.split(/\n\s*\n/)[0]?.replace(/\s+/g, ' ').trim();
+      if (firstParagraph && firstParagraph.length > 30) {
+        summary = firstParagraph.substring(0, 350);
+      }
+    }
+  }
 
-  // Summary
-  const summary = rawText.length > 80 
-    ? rawText.substring(0, 320).replace(/\s+/g, ' ').trim() + '...'
-    : `Accomplished ${designation} with ${expYears}+ years of hands-on technical experience in ${skillsList.slice(0, 4).join(', ')} and enterprise cloud software architectures.`;
+  // Derive Current Designation if mentioned
+  let designation = '';
+  const titleKeywords = [
+    'Lead Software Engineer', 'Senior Software Engineer', 'Software Engineer', 
+    'Full Stack Developer', 'Frontend Developer', 'Backend Developer', 
+    'Data Scientist', 'AI/ML Engineer', 'DevOps Engineer', 'Cloud Architect', 
+    'Solutions Architect', 'Project Manager', 'Product Manager', 'Consultant', 'QA Automation Engineer'
+  ];
+  for (const kw of titleKeywords) {
+    const titleMatch = new RegExp(`([A-Za-z\\s]{0,15}${kw})`, 'i').exec(rawText);
+    if (titleMatch && titleMatch[0]) {
+      designation = titleMatch[0].trim();
+      break;
+    }
+  }
+
+  // Extract Education items
+  const educationItems: Array<{ degree: string; specialization: string; institution: string; graduationYear: string }> = [];
+  const eduRegex = /(?:Bachelor|Master|B\.?Tech|B\.?E\.?|B\.?S\.?|M\.?S\.?|M\.?Tech|MBA|Ph\.?D|Diploma)[^\n]+/gi;
+  const eduMatches = rawText.match(eduRegex) || [];
+  for (const match of eduMatches.slice(0, 3)) {
+    const yearM = match.match(/\b(19\d\d|20\d\d)\b/);
+    educationItems.push({
+      degree: match.split(/,|\s{2,}/)[0]?.trim() || match.substring(0, 40),
+      specialization: 'Computer Science & Engineering',
+      institution: match.split(/at|from|,|-/)[1]?.trim() || 'University',
+      graduationYear: yearM ? yearM[0] : ''
+    });
+  }
+
+  // Extract Employment items if dates and companies present
+  const employmentHistory: Array<{ company: string; designation: string; duration: string; location?: string; description?: string }> = [];
+  const dateRanges = [...rawText.matchAll(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{4})\s*(?:[-–to]\s*(?:Present|Current|\d{4}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))/gi)];
+  if (dateRanges.length > 0) {
+    let currentComp = '';
+    const compMatch = rawText.match(/(?:at|for|company:)\s+([A-Z][A-Za-z0-9\s&.,]{2,30}(?:Inc|LLC|Corp|Ltd|Technologies|Solutions|Labs|Systems|Software)?)/i);
+    if (compMatch && compMatch[1]) {
+      currentComp = compMatch[1].trim();
+    }
+    employmentHistory.push({
+      company: currentComp || 'Technology Solutions',
+      designation: designation || 'Software Engineer',
+      duration: dateRanges[0][0],
+      location: location || 'United States',
+      description: `Hands-on responsibilities and feature development using ${skillsList.slice(0, 4).join(', ')}.`
+    });
+  }
+
+  // Extract Certifications
+  const certMatches = rawText.match(/(?:AWS Certified|Azure Certified|Google Cloud Certified|CKA|PMP|Scrum Master|CISSP|Oracle Certified)[^\n]+/gi) || [];
+  const certifications = certMatches.map(c => ({
+    name: c.trim(),
+    issuingOrg: c.includes('AWS') ? 'Amazon Web Services' : c.includes('Azure') ? 'Microsoft' : c.includes('Google') ? 'Google Cloud' : 'Certified Body',
+    year: ''
+  }));
+
+  // Extract Projects
+  const projectMatches = rawText.match(/(?:Project|Application|System):\s*([^\n]+)/gi) || [];
+  const projects = projectMatches.slice(0, 3).map(p => ({
+    name: p.replace(/(?:Project|Application|System):\s*/i, '').trim(),
+    description: 'Developed scalable architectural modules and features.',
+    techStack: skillsList.slice(0, 4)
+  }));
 
   return {
     name: candidateName,
     email,
     phone,
-    location: 'San Francisco, CA / Remote',
+    location,
     linkedin,
     github,
-    summary,
+    summary: summary || `${candidateName} is an experienced engineering professional with expertise in ${skillsList.slice(0, 4).join(', ')}.`,
     totalExperienceYears: expYears,
-    currentCompany,
-    currentDesignation: designation,
-    previousCompanies,
-    employmentHistory: [
-      {
-        company: currentCompany,
-        designation: designation,
-        duration: '2022 - Present',
-        location: 'United States',
-        description: `Led development of core services and APIs utilizing ${skillsList.slice(0, 3).join(', ')}.`
-      },
-      {
-        company: 'Global Tech Innovations',
-        designation: 'Software Developer',
-        duration: '2019 - 2022',
-        location: 'United States',
-        description: 'Developed scalable microservices, maintained relational databases, and created unit test suites.'
-      }
-    ],
-    education: [
-      {
-        degree: 'Bachelor of Technology / Science (B.S.)',
-        specialization: 'Computer Science & Engineering',
-        institution: 'University of Technology',
-        graduationYear: '2019'
-      }
-    ],
+    currentCompany: employmentHistory[0]?.company || '',
+    currentDesignation: designation || 'Software Engineer',
+    previousCompanies: employmentHistory.slice(1).map(e => e.company),
+    employmentHistory,
+    education: educationItems,
     skills: skillsList,
     normalizedSkills: {
-      technical: skillsList.slice(0, 6),
-      functional: ['System Architecture', 'Agile / Scrum', 'Code Review'],
-      tools: skillsList.filter(s => ['AWS', 'Docker', 'Kubernetes', 'Git', 'Linux', 'Jira'].includes(s))
+      technical: skillsList.slice(0, 10),
+      functional: ['System Architecture', 'Agile / Scrum', 'Problem Solving', 'Code Review'],
+      tools: skillsList.filter(s => ['AWS', 'Docker', 'Kubernetes', 'Git', 'Linux', 'Jira', 'Terraform', 'CI/CD', 'Azure', 'GCP', 'PostgreSQL', 'Redis'].includes(s))
     },
-    certifications: [
-      {
-        name: 'AWS Certified Solutions Architect',
-        issuingOrg: 'Amazon Web Services',
-        year: '2023'
-      }
-    ],
-    projects: [
-      {
-        name: 'Enterprise Cloud Platform',
-        description: `Engineered high-performance microservices and interactive user dashboards with ${skillsList.slice(0, 3).join(', ')}.`,
-        techStack: skillsList.slice(0, 4)
-      }
-    ],
-    suggestedRoles: [designation, 'Senior Software Engineer', 'Technical Lead']
+    certifications,
+    projects,
+    suggestedRoles: designation ? [designation, 'Senior Software Engineer'] : ['Software Engineer', 'Senior Software Engineer']
   };
 }
 
@@ -348,7 +423,7 @@ async function parseResumeWithGemini(pdfBase64: string, fileName: string, textFa
     try {
       const buffer = Buffer.from(pdfBase64, 'base64');
       rawExtractedText = await extractTextFromPdf(buffer);
-    } catch (e) {
+    } catch {
       // Continue
     }
   }
@@ -357,27 +432,28 @@ async function parseResumeWithGemini(pdfBase64: string, fileName: string, textFa
     return createSmartDeterministicParsedResume(fileName, rawExtractedText);
   }
 
-  const prompt = `You are an expert HR recruiter and parsing engine for TalentFox HR. 
-Extract comprehensive candidate details from this resume with highest fidelity and structure into clean JSON format.
+  const prompt = `You are an expert HR recruiter and precision information extraction engine for TalentFox HR. 
+Extract authentic candidate details from this resume with exact fidelity and structure into clean JSON format.
 
-Make sure to:
-1. Accurately identify candidate full name, email, phone number, location, LinkedIn URL, GitHub URL.
-2. Extract complete Professional Summary / Objective.
-3. Calculate Total Years of Experience precisely as a number.
-4. Extract Current Company and Current Designation.
-5. Extract Previous Companies list.
-6. Extract Employment History timeline (company, designation, duration, location, description).
-7. Extract Education (degree, specialization, institution/university, graduationYear).
-8. Categorize technical skills (e.g., Java, Spring Boot, Microservices, AWS, React, Angular, Python, SQL, DevOps, AI/ML, etc.) and functional skills (e.g. Agile, Team Leadership, System Architecture).
-9. Extract Certifications (name, issuingOrg, year).
-10. Extract Projects (name, description, techStack).
-11. Recommend 2 to 4 suggested job roles that match this profile.
+CRITICAL ACCURACY AND FIDELITY DIRECTIVES:
+1. Extract ALL information thoroughly: full candidate name, email, phone number, location, LinkedIn URL, GitHub URL, portfolio/website.
+2. Extract the complete Professional Summary / Profile / Objective narrative.
+3. Calculate Total Years of Experience precisely as a number based on the candidate's actual work history dates.
+4. Extract Current Company, Current Job Title / Designation, and Previous Companies list.
+5. Extract Full Employment History timeline: company name, job designation, duration (e.g. "2021 - Present"), location, and detailed description / responsibilities.
+6. Extract Full Education: degree, specialization, institution / university name, graduation year.
+7. Extract all Technical skills, functional skills (e.g. Agile, System Design), and tools (e.g. Docker, Git, Jira).
+8. Extract Certifications (name, issuingOrg, year) and notable Projects (name, description, techStack).
+9. Recommend 2 to 4 appropriate suggested job roles.
+10. If a field is not mentioned in the resume, leave it as empty string ("") or empty array ([]).
 
-Output strictly valid JSON matching this schema.`;
+Output strictly valid JSON matching the schema.`;
 
   try {
     const contents: any[] = [];
-    if (pdfBase64) {
+    
+    // Include PDF binary if available (for exact layout, columns, styling, and visual elements)
+    if (pdfBase64 && pdfBase64.length > 100) {
       contents.push({
         inlineData: {
           mimeType: 'application/pdf',
@@ -385,9 +461,14 @@ Output strictly valid JSON matching this schema.`;
         }
       });
     }
-    if (rawExtractedText) {
-      contents.push({ text: `Resume Raw Extracted Text:\n${rawExtractedText.substring(0, 8000)}` });
+
+    // Include extracted raw text if available (for exact string spelling of emails, URLs, tools, and technical terms)
+    if (rawExtractedText && rawExtractedText.trim().length > 20) {
+      contents.push({ 
+        text: `Extracted Document Raw Text:\n${rawExtractedText.substring(0, 45000)}` 
+      });
     }
+
     contents.push({ text: prompt });
 
     const schemaConfig = {
@@ -418,7 +499,7 @@ Output strictly valid JSON matching this schema.`;
               location: { type: Type.STRING },
               description: { type: Type.STRING }
             },
-            required: ['company', 'designation', 'duration']
+            required: ['company', 'designation']
           }
         },
         education: {
@@ -455,7 +536,7 @@ Output strictly valid JSON matching this schema.`;
               issuingOrg: { type: Type.STRING },
               year: { type: Type.STRING }
             },
-            required: ['name', 'issuingOrg']
+            required: ['name']
           }
         },
         projects: {
@@ -467,7 +548,7 @@ Output strictly valid JSON matching this schema.`;
               description: { type: Type.STRING },
               techStack: { type: Type.ARRAY, items: { type: Type.STRING } }
             },
-            required: ['name', 'description']
+            required: ['name']
           }
         },
         suggestedRoles: {
@@ -475,7 +556,7 @@ Output strictly valid JSON matching this schema.`;
           items: { type: Type.STRING }
         }
       },
-      required: ['name', 'email', 'skills', 'totalExperienceYears', 'currentDesignation']
+      required: ['name', 'skills']
     };
 
     const parsedJson = await generateWithGeminiFallback(ai, contents, schemaConfig);
@@ -503,13 +584,22 @@ app.post('/api/resumes/upload', upload.array('resumes', 25), async (req, res) =>
         const base64 = file.buffer.toString('base64');
         const rawText = await extractTextFromPdf(file.buffer);
         const parsedData = await parseResumeWithGemini(base64, file.originalname, rawText);
+        const candidateId = `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`;
         
+        // Cache original uploaded PDF in memory store for instant binary downloads
+        resumeFileStore.set(candidateId, {
+          buffer: file.buffer,
+          fileName: file.originalname,
+          mimeType: 'application/pdf',
+          base64
+        });
+
         const candidateRecord = {
-          id: `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`,
+          id: candidateId,
           ...parsedData,
           resumeFileName: file.originalname,
           resumeFileSize: file.size,
-          resumeBase64: `data:application/pdf;base64,${base64.substring(0, 1000)}...`,
+          resumeBase64: `data:application/pdf;base64,${base64}`,
           uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
           status: 'New'
         };
@@ -518,11 +608,22 @@ app.post('/api/resumes/upload', upload.array('resumes', 25), async (req, res) =>
         logActivity('Resume Parsed', `Extracted profile for ${candidateRecord.name} from ${file.originalname}`, 'parse');
       } catch {
         const fallback = createSmartDeterministicParsedResume(file.originalname, '');
+        const candidateId = `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`;
+        const base64 = file.buffer.toString('base64');
+        
+        resumeFileStore.set(candidateId, {
+          buffer: file.buffer,
+          fileName: file.originalname,
+          mimeType: 'application/pdf',
+          base64
+        });
+
         parsedCandidates.push({
-          id: `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`,
+          id: candidateId,
           ...fallback,
           resumeFileName: file.originalname,
           resumeFileSize: file.size,
+          resumeBase64: `data:application/pdf;base64,${base64}`,
           uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
           status: 'New'
         });
@@ -544,9 +645,11 @@ app.post('/api/resumes/parse-base64', async (req, res) => {
   try {
     const { base64, fileName, rawText } = req.body;
     let extractedText = rawText || '';
-    if (!extractedText && base64) {
+    const cleanBase64 = (base64 || '').replace(/^data:[^;]+;base64,/, '');
+
+    if (!extractedText && cleanBase64) {
       try {
-        const buffer = Buffer.from(base64, 'base64');
+        const buffer = Buffer.from(cleanBase64, 'base64');
         extractedText = await extractTextFromPdf(buffer);
       } catch {
         // Continue with raw text
@@ -555,32 +658,79 @@ app.post('/api/resumes/parse-base64', async (req, res) => {
 
     let parsedData;
     try {
-      parsedData = await parseResumeWithGemini(base64 || '', fileName || 'Resume.pdf', extractedText);
+      parsedData = await parseResumeWithGemini(cleanBase64 || '', fileName || 'Resume.pdf', extractedText);
     } catch {
       parsedData = createSmartDeterministicParsedResume(fileName || 'Resume.pdf', extractedText);
     }
 
+    const candidateId = `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`;
+
+    if (cleanBase64) {
+      try {
+        const buffer = Buffer.from(cleanBase64, 'base64');
+        resumeFileStore.set(candidateId, {
+          buffer,
+          fileName: fileName || 'Resume.pdf',
+          mimeType: 'application/pdf',
+          base64: cleanBase64
+        });
+      } catch {
+        // Continue
+      }
+    }
+
     const candidateRecord = {
-      id: `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`,
+      id: candidateId,
       ...parsedData,
       resumeFileName: fileName || 'Resume.pdf',
+      resumeBase64: cleanBase64 ? `data:application/pdf;base64,${cleanBase64}` : undefined,
       uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
       status: 'New'
     };
 
-    logActivity('Resume Parsed', `Parsed single resume: ${candidateRecord.name}`, 'parse');
+    logActivity('Resume Parsed', `Parsed resume: ${candidateRecord.name}`, 'parse');
     res.json({ success: true, candidate: candidateRecord });
   } catch {
     const fallback = createSmartDeterministicParsedResume(req.body?.fileName || 'Resume.pdf', req.body?.rawText || '');
+    const candidateId = `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`;
+    const cleanBase64 = (req.body?.base64 || '').replace(/^data:[^;]+;base64,/, '');
+
+    if (cleanBase64) {
+      try {
+        const buffer = Buffer.from(cleanBase64, 'base64');
+        resumeFileStore.set(candidateId, {
+          buffer,
+          fileName: req.body?.fileName || 'Resume.pdf',
+          mimeType: 'application/pdf',
+          base64: cleanBase64
+        });
+      } catch {
+        // Continue
+      }
+    }
+
     const candidateRecord = {
-      id: `cand-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`,
+      id: candidateId,
       ...fallback,
       resumeFileName: req.body?.fileName || 'Resume.pdf',
+      resumeBase64: cleanBase64 ? `data:application/pdf;base64,${cleanBase64}` : undefined,
       uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
       status: 'New'
     };
     res.json({ success: true, candidate: candidateRecord });
   }
+});
+
+// Download Original Resume PDF Endpoint
+app.get('/api/resumes/:id/download', (req, res) => {
+  const { id } = req.params;
+  const entry = resumeFileStore.get(id);
+  if (entry && entry.buffer) {
+    res.setHeader('Content-Type', entry.mimeType || 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(entry.fileName)}"`);
+    return res.send(entry.buffer);
+  }
+  res.status(404).json({ error: 'Resume file not found in cache' });
 });
 
 // Candidate Matching against Job Description with AI

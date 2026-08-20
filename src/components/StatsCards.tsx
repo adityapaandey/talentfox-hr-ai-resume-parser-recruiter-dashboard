@@ -79,7 +79,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
               100% Parsed & Indexed
             </p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-olive-50 dark:bg-olive-950/60 text-olive-700 dark:text-olive-400 flex items-center justify-center">
             <Users className="w-6 h-6" />
           </div>
         </div>
@@ -152,9 +152,9 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
         
         <button
           onClick={() => onFilterStatus && onFilterStatus('All')}
-          className={`px-3 py-1 rounded-lg font-medium transition-all ${
+          className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer ${
             selectedStatusFilter === 'All'
-              ? 'bg-indigo-600 text-white shadow-xs'
+              ? 'bg-olive-700 text-white shadow-xs'
               : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
           }`}
         >

@@ -1,10 +1,57 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { Candidate } from '../types';
 
-export function exportCandidatesToExcel(candidates: Candidate[], fileName = 'TalentFox_HR_Candidates') {
+export async function exportCandidatesToExcel(candidates: Candidate[], fileName = 'TalentFox_HR_Candidates') {
   if (!candidates || candidates.length === 0) return;
 
-  const rows = candidates.map(c => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'TalentFox ATS';
+  workbook.lastModifiedBy = 'TalentFox ATS';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  const worksheet = workbook.addWorksheet('Candidate Pool', {
+    views: [{ state: 'frozen', ySplit: 1 }] // Freeze header row
+  });
+
+  // Define 32 comprehensive columns with tailored widths and keys
+  worksheet.columns = [
+    { header: 'Candidate ID', key: 'id', width: 16 },
+    { header: 'Full Name', key: 'name', width: 25 },
+    { header: 'Email Address', key: 'email', width: 30 },
+    { header: 'Phone Number', key: 'phone', width: 20 },
+    { header: 'Current Location', key: 'location', width: 22 },
+    { header: 'LinkedIn URL', key: 'linkedin', width: 32 },
+    { header: 'GitHub URL', key: 'github', width: 28 },
+    { header: 'Total Experience (Years)', key: 'totalExperience', width: 24 },
+    { header: 'Current Company', key: 'currentCompany', width: 26 },
+    { header: 'Current Designation', key: 'currentDesignation', width: 28 },
+    { header: 'Previous Companies', key: 'previousCompanies', width: 32 },
+    { header: 'Professional Summary', key: 'summary', width: 55 },
+    { header: 'Employment History', key: 'employmentHistory', width: 60 },
+    { header: 'Education Details', key: 'education', width: 45 },
+    { header: 'Key Skills', key: 'skills', width: 45 },
+    { header: 'Technical Skills', key: 'technicalSkills', width: 38 },
+    { header: 'Functional Skills', key: 'functionalSkills', width: 32 },
+    { header: 'Tools & Platforms', key: 'tools', width: 32 },
+    { header: 'Certifications', key: 'certifications', width: 35 },
+    { header: 'Key Projects', key: 'projects', width: 50 },
+    { header: 'Recommended Roles', key: 'recommendedRoles', width: 32 },
+    { header: 'Match Score (%)', key: 'matchScore', width: 18 },
+    { header: 'Match Recommendation', key: 'matchRecommendation', width: 24 },
+    { header: 'Experience Fit', key: 'experienceFit', width: 20 },
+    { header: 'AI Match Reasoning', key: 'matchReasoning', width: 50 },
+    { header: 'Candidate Status', key: 'status', width: 20 },
+    { header: 'Interview Schedule', key: 'interviewSchedule', width: 35 },
+    { header: 'Duplicate Flag', key: 'duplicateFlag', width: 22 },
+    { header: 'Recruiter Notes', key: 'recruiterNotes', width: 35 },
+    { header: 'Resume File Name', key: 'resumeFileName', width: 32 },
+    { header: 'Resume Size (KB)', key: 'resumeSize', width: 18 },
+    { header: 'Applied Date / Timestamp', key: 'appliedDate', width: 26 }
+  ];
+
+  // Populate data rows
+  candidates.forEach(c => {
     // Format Education string
     const eduString = (c.education || [])
       .map(e => `${e.degree || ''} in ${e.specialization || 'Relevant Field'} (${e.institution || 'N/A'}${e.graduationYear ? `, ${e.graduationYear}` : ''})`.trim())
@@ -42,85 +89,131 @@ export function exportCandidatesToExcel(candidates: Candidate[], fileName = 'Tal
       ? `${c.interviewSchedule.date} at ${c.interviewSchedule.time} (${c.interviewSchedule.type}) with ${c.interviewSchedule.interviewer}${c.interviewSchedule.notes ? ` - Notes: ${c.interviewSchedule.notes}` : ''}`
       : 'None';
 
-    return {
-      'Candidate ID': c.id,
-      'Full Name': c.name || '',
-      'Email Address': c.email || '',
-      'Phone Number': c.phone || '',
-      'Current Location': c.location || '',
-      'LinkedIn URL': c.linkedin || '',
-      'GitHub URL': c.github || '',
-      'Total Experience (Years)': typeof c.totalExperienceYears === 'number' ? c.totalExperienceYears : (Number(c.totalExperienceYears) || 0),
-      'Current Company': c.currentCompany || '',
-      'Current Designation': c.currentDesignation || '',
-      'Previous Companies': prevCompaniesString,
-      'Professional Summary': c.summary || '',
-      'Employment History': empHistoryString,
-      'Education Details': eduString,
-      'Key Skills': allSkillsString,
-      'Technical Skills': techSkillsString,
-      'Functional Skills': funcSkillsString,
-      'Tools & Platforms': toolsString,
-      'Certifications': certsString,
-      'Key Projects': projectsString,
-      'Recommended Roles': rolesString,
-      'Match Score (%)': c.matchResult ? `${c.matchResult.score}%` : 'N/A',
-      'Match Recommendation': c.matchResult ? c.matchResult.recommendation : 'Not Evaluated',
-      'Experience Fit': c.matchResult ? c.matchResult.experienceFit : 'N/A',
-      'AI Match Reasoning': c.matchResult ? c.matchResult.reasoning : '',
-      'Candidate Status': c.status || 'New',
-      'Interview Schedule': interviewString,
-      'Duplicate Flag': c.isDuplicate ? 'Yes (Duplicate Detected)' : 'No',
-      'Recruiter Notes': c.recruiterNotes || '',
-      'Resume File Name': c.resumeFileName || '',
-      'Resume Size (KB)': c.resumeFileSize ? Math.round(c.resumeFileSize / 1024) : 'N/A',
-      'Upload Date / Timestamp': c.uploadDate || ''
+    const row = worksheet.addRow({
+      id: c.id,
+      name: c.name || '',
+      email: c.email || '',
+      phone: c.phone || '',
+      location: c.location || '',
+      linkedin: c.linkedin || '',
+      github: c.github || '',
+      totalExperience: typeof c.totalExperienceYears === 'number' ? c.totalExperienceYears : (Number(c.totalExperienceYears) || 0),
+      currentCompany: c.currentCompany || '',
+      currentDesignation: c.currentDesignation || '',
+      previousCompanies: prevCompaniesString,
+      summary: c.summary || '',
+      employmentHistory: empHistoryString,
+      education: eduString,
+      skills: allSkillsString,
+      technicalSkills: techSkillsString,
+      functionalSkills: funcSkillsString,
+      tools: toolsString,
+      certifications: certsString,
+      projects: projectsString,
+      recommendedRoles: rolesString,
+      matchScore: c.matchResult ? `${c.matchResult.score}%` : 'N/A',
+      matchRecommendation: c.matchResult ? c.matchResult.recommendation : 'Not Evaluated',
+      experienceFit: c.matchResult ? c.matchResult.experienceFit : 'N/A',
+      matchReasoning: c.matchResult ? c.matchResult.reasoning : '',
+      status: c.status || 'New',
+      interviewSchedule: interviewString,
+      duplicateFlag: c.isDuplicate ? 'Yes (Duplicate Detected)' : 'No',
+      recruiterNotes: c.recruiterNotes || '',
+      resumeFileName: c.resumeFileName || '',
+      resumeSize: c.resumeFileSize ? Math.round(c.resumeFileSize / 1024) : 'N/A',
+      appliedDate: c.uploadDate || ''
+    });
+
+    row.height = 22;
+  });
+
+  // Enable Auto-Filter on all 32 columns
+  worksheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: 32 }
+  };
+
+  // Format Header Row with Royal Olive Green Background, Bold White Text, and Borders
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 32;
+
+  headerRow.eachCell((cell, colNumber) => {
+    cell.font = {
+      name: 'Segoe UI',
+      size: 11,
+      bold: true,
+      color: { argb: 'FFFFFFFF' } // Crisp White Bold Text
+    };
+
+    // Rich Olive Green Solid Background (#445626)
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF445626' }
+    };
+
+    cell.alignment = {
+      vertical: 'middle',
+      horizontal: 'center',
+      wrapText: false
+    };
+
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF2D381B' } },
+      bottom: { style: 'medium', color: { argb: 'FF2D381B' } },
+      left: { style: 'thin', color: { argb: 'FF556B2F' } },
+      right: { style: 'thin', color: { argb: 'FF556B2F' } }
     };
   });
 
-  const worksheet = XLSX.utils.json_to_sheet(rows);
+  // Format Data Rows with clean typography, borders, and subtle zebra striping
+  for (let rowIndex = 2; rowIndex <= worksheet.rowCount; rowIndex++) {
+    const row = worksheet.getRow(rowIndex);
+    const isEven = rowIndex % 2 === 0;
 
-  // Auto-fit column widths for clear readability in Excel
-  worksheet['!cols'] = [
-    { wch: 14 }, // Candidate ID
-    { wch: 22 }, // Full Name
-    { wch: 28 }, // Email Address
-    { wch: 18 }, // Phone Number
-    { wch: 20 }, // Current Location
-    { wch: 32 }, // LinkedIn URL
-    { wch: 28 }, // GitHub URL
-    { wch: 22 }, // Total Experience (Years)
-    { wch: 26 }, // Current Company
-    { wch: 26 }, // Current Designation
-    { wch: 30 }, // Previous Companies
-    { wch: 50 }, // Professional Summary
-    { wch: 60 }, // Employment History
-    { wch: 45 }, // Education Details
-    { wch: 45 }, // Key Skills
-    { wch: 35 }, // Technical Skills
-    { wch: 30 }, // Functional Skills
-    { wch: 30 }, // Tools & Platforms
-    { wch: 35 }, // Certifications
-    { wch: 50 }, // Key Projects
-    { wch: 30 }, // Recommended Roles
-    { wch: 16 }, // Match Score (%)
-    { wch: 22 }, // Match Recommendation
-    { wch: 18 }, // Experience Fit
-    { wch: 50 }, // AI Match Reasoning
-    { wch: 18 }, // Candidate Status
-    { wch: 35 }, // Interview Schedule
-    { wch: 22 }, // Duplicate Flag
-    { wch: 35 }, // Recruiter Notes
-    { wch: 32 }, // Resume File Name
-    { wch: 16 }, // Resume Size (KB)
-    { wch: 22 }  // Upload Date / Timestamp
-  ];
+    row.eachCell((cell, colNumber) => {
+      cell.font = {
+        name: 'Segoe UI',
+        size: 10,
+        color: { argb: 'FF1E293B' }
+      };
 
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Candidates');
+      // Subtle alternating row tint
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: isEven ? 'FFFFFFFF' : 'FFF8FAFC' }
+      };
 
+      // Clean cell border
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFF1F5F9' } },
+        right: { style: 'thin', color: { argb: 'FFF1F5F9' } }
+      };
+
+      // Align numbers and badges center, text left
+      if ([1, 4, 8, 22, 24, 26, 28, 31, 32].includes(colNumber)) {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      } else {
+        cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
+      }
+    });
+  }
+
+  // Export buffer & trigger direct browser download
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
   const dateStamp = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(workbook, `${fileName}_${dateStamp}.xlsx`);
+  anchor.download = `${fileName}_${dateStamp}.xlsx`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 }
 
 export function exportCandidatesToCSV(candidates: Candidate[], fileName = 'TalentFox_HR_Candidates') {
@@ -134,41 +227,66 @@ export function exportCandidatesToCSV(candidates: Candidate[], fileName = 'Talen
 
   const rows = candidates.map(c => {
     const eduString = (c.education || [])
-      .map(e => `${e.degree || ''} in ${e.specialization || ''} (${e.institution || ''}${e.graduationYear ? `, ${e.graduationYear}` : ''})`)
+      .map(e => `${e.degree || ''} in ${e.specialization || 'Relevant Field'} (${e.institution || 'N/A'}${e.graduationYear ? `, ${e.graduationYear}` : ''})`.trim())
       .join(' | ');
 
     const prevCompaniesString = (c.previousCompanies || []).join(', ');
     const empHistoryString = (c.employmentHistory || [])
-      .map(h => `${h.designation} at ${h.company} [${h.duration}]`)
+      .map(h => `${h.designation || 'Role'} at ${h.company || 'Company'} [${h.duration || 'N/A'}]${h.location ? ` (${h.location})` : ''}: ${h.description || ''}`.trim())
       .join(' | ');
 
     const allSkillsString = (c.skills || []).join(', ');
-    const certsString = (c.certifications || []).map(cert => cert.name).join(' | ');
-    const projectsString = (c.projects || []).map(p => p.name).join(' | ');
+    const techSkillsString = (c.normalizedSkills?.technical || []).join(', ');
+    const funcSkillsString = (c.normalizedSkills?.functional || []).join(', ');
+    const toolsString = (c.normalizedSkills?.tools || []).join(', ');
+
+    const certsString = (c.certifications || [])
+      .map(cert => `${cert.name} (${cert.issuingOrg || 'N/A'}${cert.year ? `, ${cert.year}` : ''})`)
+      .join(' | ');
+
+    const projectsString = (c.projects || [])
+      .map(p => `${p.name}: ${p.description || ''}${p.techStack && p.techStack.length ? ` [Tech: ${p.techStack.join(', ')}]` : ''}`.trim())
+      .join(' | ');
+
+    const rolesString = (c.suggestedRoles || []).join(', ');
+
+    const interviewString = c.interviewSchedule
+      ? `${c.interviewSchedule.date} at ${c.interviewSchedule.time} (${c.interviewSchedule.type}) with ${c.interviewSchedule.interviewer}${c.interviewSchedule.notes ? ` - Notes: ${c.interviewSchedule.notes}` : ''}`
+      : 'None';
 
     return {
       'Candidate ID': escapeCSV(c.id),
-      'Full Name': escapeCSV(c.name),
-      'Email Address': escapeCSV(c.email),
-      'Phone Number': escapeCSV(c.phone),
-      'Current Location': escapeCSV(c.location),
-      'LinkedIn URL': escapeCSV(c.linkedin),
+      'Full Name': escapeCSV(c.name || ''),
+      'Email Address': escapeCSV(c.email || ''),
+      'Phone Number': escapeCSV(c.phone || ''),
+      'Current Location': escapeCSV(c.location || ''),
+      'LinkedIn URL': escapeCSV(c.linkedin || ''),
       'GitHub URL': escapeCSV(c.github || ''),
       'Total Experience (Years)': escapeCSV(c.totalExperienceYears),
-      'Current Company': escapeCSV(c.currentCompany),
-      'Current Designation': escapeCSV(c.currentDesignation),
+      'Current Company': escapeCSV(c.currentCompany || ''),
+      'Current Designation': escapeCSV(c.currentDesignation || ''),
       'Previous Companies': escapeCSV(prevCompaniesString),
-      'Professional Summary': escapeCSV(c.summary),
+      'Professional Summary': escapeCSV(c.summary || ''),
       'Employment History': escapeCSV(empHistoryString),
       'Education Details': escapeCSV(eduString),
       'Key Skills': escapeCSV(allSkillsString),
+      'Technical Skills': escapeCSV(techSkillsString),
+      'Functional Skills': escapeCSV(funcSkillsString),
+      'Tools & Platforms': escapeCSV(toolsString),
       'Certifications': escapeCSV(certsString),
       'Key Projects': escapeCSV(projectsString),
+      'Recommended Roles': escapeCSV(rolesString),
       'Match Score (%)': escapeCSV(c.matchResult ? `${c.matchResult.score}%` : 'N/A'),
       'Match Recommendation': escapeCSV(c.matchResult ? c.matchResult.recommendation : 'Not Evaluated'),
-      'Candidate Status': escapeCSV(c.status),
-      'Resume File Name': escapeCSV(c.resumeFileName),
-      'Upload Date': escapeCSV(c.uploadDate)
+      'Experience Fit': escapeCSV(c.matchResult ? c.matchResult.experienceFit : 'N/A'),
+      'AI Match Reasoning': escapeCSV(c.matchResult ? c.matchResult.reasoning : ''),
+      'Candidate Status': escapeCSV(c.status || 'New'),
+      'Interview Schedule': escapeCSV(interviewString),
+      'Duplicate Flag': escapeCSV(c.isDuplicate ? 'Yes (Duplicate Detected)' : 'No'),
+      'Recruiter Notes': escapeCSV(c.recruiterNotes || ''),
+      'Resume File Name': escapeCSV(c.resumeFileName || ''),
+      'Resume Size (KB)': escapeCSV(c.resumeFileSize ? Math.round(c.resumeFileSize / 1024) : 'N/A'),
+      'Applied Date / Timestamp': escapeCSV(c.uploadDate || '')
     };
   });
 
@@ -186,4 +304,5 @@ export function exportCandidatesToCSV(candidates: Candidate[], fileName = 'Talen
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }

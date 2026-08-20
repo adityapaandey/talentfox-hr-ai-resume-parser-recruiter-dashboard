@@ -24,7 +24,7 @@ export const AuditLogsDrawer: React.FC<AuditLogsDrawerProps> = ({
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-olive-50 dark:bg-olive-950/60 text-olive-700 dark:text-olive-400 flex items-center justify-center">
               <History className="w-5 h-5" />
             </div>
             <div>
@@ -40,14 +40,14 @@ export const AuditLogsDrawer: React.FC<AuditLogsDrawerProps> = ({
           <div className="flex items-center space-x-1">
             <button
               onClick={onRefreshLogs}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               title="Refresh logs"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -63,7 +63,7 @@ export const AuditLogsDrawer: React.FC<AuditLogsDrawerProps> = ({
             >
               <div className="flex items-center justify-between">
                 <span className="font-bold text-slate-900 dark:text-white flex items-center">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500 mr-1.5" />
+                  <span className="w-2 h-2 rounded-full bg-olive-600 mr-1.5" />
                   {log.action}
                 </span>
                 <span className="text-[10px] text-slate-400">
@@ -77,7 +77,7 @@ export const AuditLogsDrawer: React.FC<AuditLogsDrawerProps> = ({
 
               <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
                 <span>By: {log.user}</span>
-                <span className="uppercase font-semibold text-indigo-600 dark:text-indigo-400">{log.type}</span>
+                <span className="uppercase font-semibold text-olive-700 dark:text-olive-400">{log.type}</span>
               </div>
             </div>
           ))}
